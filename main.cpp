@@ -63,6 +63,13 @@ static void walk(source& src)
 	const char *ctr, *head;
 	int nested;	
 	int first, second;
+	int max_func_depth;
+	bool read_namespace;
+	int prev_wrap_index;	
+
+	max_func_depth = 0;
+	read_namespace = false;
+	prev_wrap_index = 0;
 
 	/* sort functions by length */
 	std::sort(src.functions.begin(), src.functions.end(), compare);
@@ -134,6 +141,11 @@ static void walk(source& src)
 			}
 			
 		}
+
+		/* end of command */
+		if (*ctr == ';') {
+			read_namespace = false;
+		}
 		
 		if (isspace(*ctr)) {
 			if (buf.length()) {
@@ -153,7 +165,11 @@ static void walk(source& src)
 	next:
 		if (token.length()) {
 			
-			if (nested == 0) {
+			if (token.compare("namespace") == 0) {
+				read_namespace = true;
+			}
+
+			if (nested <= max_func_depth) {
 				/* check functions name */
 				const char *tctr;
 				bool ok;
@@ -202,13 +218,11 @@ static void walk(source& src)
 				}
 				if (ok) {
 					/* search near tag existed  */
-					if (first > 30) {
-						std::string sub = std::string(first - 30, 30);
-						size_t pos = sub.find("LCOV_EXCL_BR_START");
-						if (pos == std::string::npos) {
-							first = -1;
-							ok = false;
-						}	
+					std::string sub = std::string(head + prev_wrap_index, first - prev_wrap_index);
+					size_t pos = sub.find("LCOV_EXCL_BR_START");
+					if (pos != std::string::npos) {
+						first = -1;
+						ok = false;
 					}	
 				}
 				if (is_checked) {
@@ -225,9 +239,17 @@ static void walk(source& src)
 
 		if (*ctr == '{') {
 			nested++;
+			if (read_namespace) {
+				max_func_depth++;
+				read_namespace = false;
+			}
 		} else if (*ctr == '}') {
+			prev_wrap_index = ctr - head;
+			if (nested == max_func_depth) {
+				max_func_depth--;
+			}
 			nested--;
-			if (nested == 0 && first >= 0) {
+			if (nested <= max_func_depth && first >= 0) {
 				second = ctr - head;
 				
 				blocks.push_back((block){first, second});
